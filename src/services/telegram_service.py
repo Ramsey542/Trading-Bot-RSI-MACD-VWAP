@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Union
 import requests
 from datetime import datetime
 import sys
@@ -14,29 +14,34 @@ from config.config import Config
 class TelegramService:
     def __init__(self):
         self.token = Config.TELEGRAM_TOKEN
-        self.chat_id = Config.TELEGRAM_CHAT_ID
+        self.chat_ids = [Config.TELEGRAM_CHAT_ID] if isinstance(Config.TELEGRAM_CHAT_ID, str) else Config.TELEGRAM_CHAT_ID
         self.base_url = f"https://api.telegram.org/bot{self.token}" if self.token else None
         
     def is_configured(self) -> bool:
-        return bool(self.token and self.chat_id)
+        return bool(self.token and self.chat_ids)
         
     def send_message(self, text: str, parse_mode: str = "HTML") -> bool:
         if not self.is_configured():
             print("Telegram not configured")
             return False
             
-        try:
-            url = f"{self.base_url}/sendMessage"
-            data = {
-                "chat_id": self.chat_id,
-                "text": text,
-                "parse_mode": parse_mode
-            }
-            response = requests.post(url, data=data)
-            return response.status_code == 200
-        except Exception as e:
-            print(f"Error sending Telegram message: {str(e)}")
-            return False
+        success = True
+        for chat_id in self.chat_ids:
+            try:
+                url = f"{self.base_url}/sendMessage"
+                data = {
+                    "chat_id": chat_id,
+                    "text": text,
+                    "parse_mode": parse_mode
+                }
+                response = requests.post(url, data=data)
+                if response.status_code != 200:
+                    print(f"Failed to send message to chat_id {chat_id}")
+                    success = False
+            except Exception as e:
+                print(f"Error sending Telegram message to chat_id {chat_id}: {str(e)}")
+                success = False
+        return success
             
     def format_signal_message(self, symbol: str, direction: str, score: float, reasons: List[str]) -> str:
         emoji = "🟢" if direction == "BUY" else "🔴"

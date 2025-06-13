@@ -9,7 +9,7 @@ class Config:
     ALPACA_BASE_URL = "https://paper-api.alpaca.markets"
 
     TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-    TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+    TELEGRAM_CHAT_ID = [chat_id.strip() for chat_id in os.getenv("TELEGRAM_CHAT_ID", "").split(",") if chat_id.strip()]
 
     CONFIDENCE_THRESHOLD = 6
     CHECK_INTERVAL_VOLATILE = 300
