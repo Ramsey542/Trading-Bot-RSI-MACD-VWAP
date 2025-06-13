@@ -102,7 +102,7 @@ class TradingBot:
             for symbol in active_symbols:
                 await self.process_symbol(symbol)
                     
-            interval = Config.CHECK_INTERVAL_VOLATILE if self.is_market_volatile() else Config.CHECK_INTERVAL_SLOW
+            interval = Config.CHECK_INTERVAL_VOLATILE
             print(f"Completed full scan cycle. Next scan in {interval} seconds.")
             await asyncio.sleep(interval)
 
