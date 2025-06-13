@@ -71,7 +71,7 @@ Reason: {', '.join(reasons)}
         return message
 
     def format_execute_alert(self, symbol: str, direction: str) -> str:
-        emoji = "🟢"
+        emoji = "🟢" if direction == "BUY" else "🔴"
         current_time = datetime.now().strftime("%H:%M:%S")
         
         message = f"""
