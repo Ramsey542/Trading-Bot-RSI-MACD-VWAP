@@ -41,14 +41,14 @@ class TechnicalIndicators:
         return 100 - (100 / (1 + rs))
 
     @staticmethod
-    def calculate_macd(candles: List[Candle]) -> Dict[str, bool]:
-        """
-        Calculates Moving Average Convergence Divergence (MACD):
-        1. Calculate 12-period and 26-period Exponential Moving Averages (EMA)
-        2. MACD Line = 12-period EMA - 26-period EMA
-        3. Signal Line = 9-period EMA of MACD Line
-        4. Returns whether MACD line crosses above/below signal line
-        """
+    def get_macd_trend(candles: List[Candle]) -> str:
+        macd_data = TechnicalIndicators.calculate_macd(candles)
+        macd_line = macd_data["macd_line"]
+        signal_line = macd_data["signal_line"]
+        return "bullish" if macd_line[-1] > signal_line[-1] else "bearish"
+
+    @staticmethod
+    def calculate_macd(candles: List[Candle]) -> Dict[str, Union[bool, np.ndarray]]:
         closes = np.array([candle.close for candle in candles])
         
         ema12 = np.zeros_like(closes)
@@ -75,7 +75,11 @@ class TechnicalIndicators:
         current_cross = macd_line[-1] > signal_line[-1]
         prev_cross = macd_line[-2] > signal_line[-2]
         
-        return {"MACD_cross": current_cross != prev_cross}
+        return {
+            "MACD_cross": current_cross != prev_cross,
+            "macd_line": macd_line,
+            "signal_line": signal_line
+        }
 
     @staticmethod
     def calculate_vwap(candles: List[Candle]) -> Dict[str, str]:
@@ -137,6 +141,36 @@ class TechnicalIndicators:
             touch = "none"
             
         return {"bollinger_touch": touch, "bands": bands}
+
+    @staticmethod
+    def is_volume_spike(candles: List[Candle], lookback: int = 10, threshold: float = 1.5) -> bool:
+        if len(candles) < lookback + 1:
+            return False
+        volumes = [candle.volume for candle in candles[-lookback-1:-1]]
+        avg_volume = sum(volumes) / len(volumes)
+        return candles[-1].volume > threshold * avg_volume
+
+    @staticmethod
+    def is_bollinger_squeeze(bands: Dict[str, float], threshold: float = 0.05) -> bool:
+        return (bands["upper"] - bands["lower"]) / bands["middle"] < threshold
+
+    @staticmethod
+    def is_vwap_aligned(price: float, vwap: float, threshold: float = 0.01) -> bool:
+        return abs(price - vwap) / vwap < threshold
+
+    @staticmethod
+    def detect_trend_structure(candles: List[Candle]) -> str:
+        if len(candles) < 4:
+            return "neutral"
+        highs = [candle.high for candle in candles[-4:]]
+        lows = [candle.low for candle in candles[-4:]]
+        return "uptrend" if highs[-1] > highs[-2] and lows[-1] > lows[-2] else "downtrend"
+
+    @staticmethod
+    def is_strong_candle(candle: Candle) -> bool:
+        body = abs(candle.close - candle.open)
+        wick_total = candle.high - candle.low
+        return body / wick_total > 0.6 if wick_total > 0 else False
 
     @staticmethod
     def analyze_volume_spike(
@@ -230,7 +264,6 @@ class TechnicalIndicators:
 
     @classmethod
     def calculate_all_indicators(cls, candles: List[Candle]) -> Tuple[float, List[str], Dict]:
-
         if not candles:
             return 0, ["No data available"], {}
             
@@ -243,36 +276,34 @@ class TechnicalIndicators:
         indicators["RSI"] = rsi_value
         indicator_values["RSI"] = round(rsi_value, 2)
 
-        closes = np.array([candle.close for candle in candles])
-        ema12 = np.zeros_like(closes)
-        ema26 = np.zeros_like(closes)
-        
-        multiplier12 = 2 / (Config.MACD_FAST + 1)
-        ema12[0] = closes[0]
-        for i in range(1, len(closes)):
-            ema12[i] = (closes[i] - ema12[i-1]) * multiplier12 + ema12[i-1]
-        
-        multiplier26 = 2 / (Config.MACD_SLOW + 1)
-        ema26[0] = closes[0]
-        for i in range(1, len(closes)):
-            ema26[i] = (closes[i] - ema26[i-1]) * multiplier26 + ema26[i-1]
-        
-        macd_line = ema12 - ema26
-        indicator_values["MACD"] = round(macd_line[-1], 2)
+        macd_data = cls.calculate_macd(candles)
+        macd_trend = cls.get_macd_trend(candles)
+        indicators["MACD_cross"] = macd_data["MACD_cross"]
+        indicators["MACD_trend"] = macd_trend
+        indicator_values["MACD"] = round(macd_data["macd_line"][-1], 2)
 
         bollinger = cls.calculate_bollinger_bands(candles)
         current_price = candles[-1].close
         middle_band = bollinger["bands"]["middle"]
-
+        indicators.update(bollinger)
         
         bb_value = ((current_price - middle_band) / middle_band) * 100
-        indicator_values["BB"] = round(bb_value, 2)  
+        indicator_values["BB"] = round(bb_value, 2)
 
-        indicators.update(cls.calculate_macd(candles))
-        indicators.update(cls.calculate_vwap(candles))
-        indicators.update(bollinger)
-        indicators.update(cls.analyze_volume_spike(candles))
-        indicators.update(cls.analyze_price_action(candles, bollinger))
+        vwap_data = cls.calculate_vwap(candles)
+        indicators.update(vwap_data)
+        
+        is_squeeze = cls.is_bollinger_squeeze(bollinger["bands"])
+        indicators["bollinger_squeeze"] = is_squeeze
+        
+        is_spike = cls.is_volume_spike(candles)
+        indicators["volume_spike_new"] = is_spike
+        
+        trend_structure = cls.detect_trend_structure(candles)
+        indicators["trend_structure"] = trend_structure
+        
+        is_strong = cls.is_strong_candle(candles[-1])
+        indicators["strong_candle"] = is_strong
 
         if indicators["RSI"] < 30:
             score += 2
@@ -282,8 +313,12 @@ class TechnicalIndicators:
             reasons.append("RSI overbought")
 
         if indicators["MACD_cross"]:
-            score += 3
-            reasons.append("MACD crossover")
+            if macd_trend == "bullish":
+                score += 3
+                reasons.append("MACD bull cross")
+            else:
+                score -= 3
+                reasons.append("MACD bear cross")
 
         if indicators["VWAP_trend"] == "above":
             score += 2
@@ -299,15 +334,31 @@ class TechnicalIndicators:
             score -= 1
             reasons.append("BB reject")
 
-        if indicators["volume_spike"]:
+        if indicators["bollinger_squeeze"]:
             score += 1
-            reasons.append("VOL")
+            reasons.append("BB squeeze")
 
-        if indicators["price_action"] == "bullish":
+        if indicators["volume_spike_new"]:
+            if trend_structure == "uptrend":
+                score += 2
+                reasons.append("VOL spike up")
+            elif trend_structure == "downtrend":
+                score -= 2
+                reasons.append("VOL spike down")
+
+        if indicators["trend_structure"] == "uptrend":
             score += 2
-            reasons.append("PA bull")
-        elif indicators["price_action"] == "bearish":
+            reasons.append("HH/HL")
+        elif indicators["trend_structure"] == "downtrend":
             score -= 2
-            reasons.append("PA bear")
+            reasons.append("LL/LH")
+
+        if indicators["strong_candle"]:
+            if trend_structure == "uptrend":
+                score += 1
+                reasons.append("Strong bull")
+            elif trend_structure == "downtrend":
+                score -= 1
+                reasons.append("Strong bear")
 
         return score, reasons, indicator_values 

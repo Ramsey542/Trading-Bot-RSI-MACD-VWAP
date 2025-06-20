@@ -2,4 +2,5 @@ numpy
 pandas
 requests
 python-dotenv
-alpaca-py 
+alpaca-py
+python-telegram-bot 

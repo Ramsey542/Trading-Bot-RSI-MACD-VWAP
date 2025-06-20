@@ -11,7 +11,7 @@ class Config:
     TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
     TELEGRAM_CHAT_ID = [chat_id.strip() for chat_id in os.getenv("TELEGRAM_CHAT_ID", "").split(",") if chat_id.strip()]
 
-    CONFIDENCE_THRESHOLD = 6
+    CONFIDENCE_THRESHOLD = 8
     CHECK_INTERVAL_VOLATILE = 300
     CHECK_INTERVAL_SLOW = 180
     MAX_TRADES_PER_DAY = 1000
